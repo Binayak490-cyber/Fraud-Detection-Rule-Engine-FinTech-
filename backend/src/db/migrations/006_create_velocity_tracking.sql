@@ -1,0 +1,1 @@
+-- Create velocity_tracking table

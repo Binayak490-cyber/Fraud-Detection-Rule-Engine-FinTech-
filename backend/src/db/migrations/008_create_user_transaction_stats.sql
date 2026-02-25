@@ -1,0 +1,1 @@
+-- Create user_transaction_stats table

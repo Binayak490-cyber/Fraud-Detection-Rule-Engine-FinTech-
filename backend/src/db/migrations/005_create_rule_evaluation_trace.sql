@@ -1,0 +1,1 @@
+-- Create rule_evaluation_trace table
