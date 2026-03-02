@@ -1,0 +1,1 @@
+-- Create fraud_rules table

@@ -1,0 +1,1 @@
+// Rule card component

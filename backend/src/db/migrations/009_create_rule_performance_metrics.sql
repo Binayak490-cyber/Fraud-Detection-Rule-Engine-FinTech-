@@ -1,0 +1,1 @@
+-- Create rule_performance_metrics table
