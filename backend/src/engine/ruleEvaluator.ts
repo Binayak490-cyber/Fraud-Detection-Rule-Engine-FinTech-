@@ -15,44 +15,35 @@ export interface VelocityData {
   [key: string]: number; // allows dynamic field access by rule.field_name
 }
 
-// Parse threshold_value string into a number or array of values
-function parseThreshold(value: string): number | string[] {
-  if (value.includes(',')) {
-    return value.split(',').map((v) => v.trim());
-  }
-  return parseFloat(value);
-}
-
-// Apply operator between a field value and a threshold
+// Apply operator between a field value and the raw threshold string from the DB
 function applyOperator(
   fieldValue: number | string,
   operator: Operator,
-  threshold: number | string[]
+  thresholdRaw: string
 ): boolean {
-  // Set operations: in / not_in — works for both strings and numbers
+  // Set operations: in / not_in — comma-separated values e.g. "US,UK,CA"
   if (operator === 'in' || operator === 'not_in') {
-    const set = (threshold as string[]).map((v) => v.toLowerCase());
+    const set = thresholdRaw.split(',').map((v) => v.trim().toLowerCase());
     const val = String(fieldValue).toLowerCase();
     return operator === 'in' ? set.includes(val) : !set.includes(val);
   }
 
-  // Range operation: threshold_value format is "min-max" e.g. "100-5000"
+  // Range operation: "min-max" format e.g. "10000-50000"
   if (operator === 'range') {
-    const parts = String(threshold).split('-');
+    const parts = thresholdRaw.split('-');
     const min = parseFloat(parts[0]);
     const max = parseFloat(parts[1]);
-    const num = Number(fieldValue);
-    return num >= min && num <= max;
+    return Number(fieldValue) >= min && Number(fieldValue) <= max;
   }
 
   // Regex match for string fields e.g. location
   if (operator === 'regex') {
-    return new RegExp(String(threshold)).test(String(fieldValue));
+    return new RegExp(thresholdRaw).test(String(fieldValue));
   }
 
   // Numeric comparisons
   const numValue = Number(fieldValue);
-  const numThreshold = Number(threshold);
+  const numThreshold = parseFloat(thresholdRaw);
 
   switch (operator) {
     case 'gt':  return numValue > numThreshold;
@@ -73,20 +64,18 @@ function getFieldValue(
 ): number | string | null {
   switch (rule.rule_type) {
     case 'threshold':
-      // Direct transaction fields
       if (rule.field_name === 'amount')    return tx.amount;
       if (rule.field_name === 'location')  return tx.location;
       if (rule.field_name === 'device_id') return tx.device_id;
       return null;
 
     case 'temporal':
-      // Time-based fields derived from transaction_time
-      if (rule.field_name === 'hour_of_day')  return new Date(tx.transaction_time).getHours();
-      if (rule.field_name === 'day_of_week')  return new Date(tx.transaction_time).getDay();
+      // Use UTC hours to ensure timezone-consistent evaluation
+      if (rule.field_name === 'hour_of_day') return new Date(tx.transaction_time).getUTCHours();
+      if (rule.field_name === 'day_of_week') return new Date(tx.transaction_time).getUTCDay();
       return null;
 
     case 'velocity':
-      // Velocity fields come from velocityChecker — already computed
       return velocityData[rule.field_name] ?? null;
 
     default:
@@ -106,8 +95,7 @@ export function evaluateRule(
     return { triggered: false, reason: `Unknown field: ${rule.field_name}` };
   }
 
-  const threshold = parseThreshold(rule.threshold_value);
-  const triggered = applyOperator(fieldValue, rule.operator, threshold);
+  const triggered = applyOperator(fieldValue, rule.operator, rule.threshold_value);
 
   const reason = triggered
     ? `${rule.field_name} (${fieldValue}) ${rule.operator} ${rule.threshold_value}`
